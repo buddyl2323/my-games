@@ -153,7 +153,11 @@ function throwGrenade(){
  if(host)processGrenade(myId,m);else send(hostConn,m);
 }
 
-const gun=new THREE.Group();camera.add(gun);gun.position.set(.34,-.34,-.66);
+const weaponScene = new THREE.Scene();
+const weaponCamera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.01,20);
+const gun=new THREE.Group();weaponScene.add(gun);gun.position.set(.28,-.28,-.95);
+weaponScene.add(new THREE.AmbientLight(0xffffff,2.5));
+const weaponKey=new THREE.DirectionalLight(0xffffff,3);weaponKey.position.set(-2,4,4);weaponScene.add(weaponKey);
 const barrelMat=mat(0x20262c,.36,.8),trim=mat(0x57616b,.3,.8),grip=mat(0x111518,.85,.2);
 function weaponBox(w,h,d,x,y,z,m){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);gun.add(o);return o}
 let muzzle=null,recoil=0,muzzleUntil=0,bob=0;
@@ -177,6 +181,11 @@ function buildGun(name){
  muzzle=new THREE.Mesh(new THREE.ConeGeometry(.14,.3,8),new THREE.MeshBasicMaterial({color:0xffa02f}));
  muzzle.rotation.x=-Math.PI/2;muzzle.position.z=front;muzzle.visible=false;gun.add(muzzle);
 }
+// Keep the weapon in the camera's visible lower-right field of view.
+// A small viewmodel light makes the dark rifle readable even in shadow.
+const gunLight = new THREE.PointLight(0xd8e6ff, 2.8, 5);
+gunLight.position.set(-0.4, 0.7, 0.1);
+weaponScene.add(gunLight);
 buildGun('rifle');
 function fire(){
  if(!locked||!ready)return;
@@ -186,7 +195,7 @@ function fire(){
  if(host)processFire(myId,m);else send(hostConn,m);
 }
 $('start').onclick=()=>canvas.requestPointerLock();canvas.onclick=()=>{if(!locked)canvas.requestPointerLock()};document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;overlay.style.display=locked?'none':'grid'});document.addEventListener('mousemove',e=>{if(!locked)return;me.yaw-=e.movementX*.002;me.pitch=THREE.MathUtils.clamp(me.pitch-e.movementY*.002,-Math.PI/2+.04,Math.PI/2-.04)});document.addEventListener('mousedown',e=>{if(e.button===0)fire()});document.addEventListener('keydown',e=>{if(e.code==='Digit1')equipWeapon('rifle');if(e.code==='Digit2')equipWeapon('smg');if(e.code==='Digit3')equipWeapon('marksman');if(e.code==='KeyG'&&!e.repeat)throwGrenade();keys[e.code]=true;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault()});document.addEventListener('keyup',e=>keys[e.code]=false);window.addEventListener('blur',()=>{for(const k of Object.keys(keys))keys[k]=false});
-function movement(dt){let f=Number(!!keys.KeyW)-Number(!!keys.KeyS),r=Number(!!keys.KeyD)-Number(!!keys.KeyA);const length=Math.hypot(f,r)||1;f/=length;r/=length;const speed=keys.ShiftLeft?11:7;const dx=(-Math.sin(me.yaw)*f+Math.cos(me.yaw)*r)*speed,dz=(-Math.cos(me.yaw)*f-Math.sin(me.yaw)*r)*speed;const a=1-Math.exp(-12*dt);me.vx+=(dx-me.vx)*a;me.vz+=(dz-me.vz)*a;const x=me.x+me.vx*dt,z=me.z+me.vz*dt;if(!blocked(x,me.z))me.x=x;else me.vx=0;if(!blocked(me.x,z))me.z=z;else me.vz=0;snapCamera();const walking=Math.hypot(me.vx,me.vz)>.3;bob+=dt*(walking?12:3);recoil=Math.max(0,recoil-dt*.85);gun.position.y=-.34+(walking?Math.sin(bob)*.012:0)-recoil*.25;gun.rotation.x=recoil;gun.position.z=-.66+recoil*.7;if(performance.now()>muzzleUntil)muzzle.visible=false}
+function movement(dt){let f=Number(!!keys.KeyW)-Number(!!keys.KeyS),r=Number(!!keys.KeyD)-Number(!!keys.KeyA);const length=Math.hypot(f,r)||1;f/=length;r/=length;const speed=keys.ShiftLeft?11:7;const dx=(-Math.sin(me.yaw)*f+Math.cos(me.yaw)*r)*speed,dz=(-Math.cos(me.yaw)*f-Math.sin(me.yaw)*r)*speed;const a=1-Math.exp(-12*dt);me.vx+=(dx-me.vx)*a;me.vz+=(dz-me.vz)*a;const x=me.x+me.vx*dt,z=me.z+me.vz*dt;if(!blocked(x,me.z))me.x=x;else me.vx=0;if(!blocked(me.x,z))me.z=z;else me.vz=0;snapCamera();const walking=Math.hypot(me.vx,me.vz)>.3;bob+=dt*(walking?12:3);recoil=Math.max(0,recoil-dt*.85);gun.position.y=-.28+(walking?Math.sin(bob)*.012:0)-recoil*.25;gun.rotation.x=recoil;gun.position.z=-.95+recoil*.7;if(performance.now()>muzzleUntil)muzzle.visible=false}
 function animateEffects(dt){for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;if(e.type==='debris'){e.velocity.y-=18*dt;e.o.position.addScaledVector(e.velocity,dt);e.o.rotation.x+=dt*8;e.o.rotation.z+=dt*9}if(e.life<=0){scene.remove(e.o);e.o.geometry.dispose();if(e.o.material!==undefined&&e.type==='tracer')e.o.material.dispose();effects.splice(i,1)}}}
-let previous=performance.now();function frame(now){requestAnimationFrame(frame);$('grenade').textContent=now>=grenadeReadyAt?'GRENADE: READY':'GRENADE: '+Math.ceil((grenadeReadyAt-now)/1000)+'s';const dt=Math.min((now-previous)/1000,.05);previous=now;if(locked)movement(dt);for(const p of remote.values()){p.g.position.lerp(p.target,1-Math.exp(-14*dt));const diff=Math.atan2(Math.sin(p.yaw-p.g.rotation.y),Math.cos(p.yaw-p.g.rotation.y));p.g.rotation.y+=diff*(1-Math.exp(-12*dt));const red=now<p.flash;p.armor.color.setHex(red?0xff2020:0x41474d);p.dark.color.setHex(red?0xff2020:0x242b34)}animateEffects(dt);if(ready&&now-lastSync>=1000/60){lastSync=now;const s=localSnapshot();if(host){broadcast({type:'move',...s})}else send(hostConn,{type:'move',...s})}renderer.render(scene,camera)}requestAnimationFrame(frame);
-window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+let previous=performance.now();function frame(now){requestAnimationFrame(frame);$('grenade').textContent=now>=grenadeReadyAt?'GRENADE: READY':'GRENADE: '+Math.ceil((grenadeReadyAt-now)/1000)+'s';const dt=Math.min((now-previous)/1000,.05);previous=now;if(locked)movement(dt);for(const p of remote.values()){p.g.position.lerp(p.target,1-Math.exp(-14*dt));const diff=Math.atan2(Math.sin(p.yaw-p.g.rotation.y),Math.cos(p.yaw-p.g.rotation.y));p.g.rotation.y+=diff*(1-Math.exp(-12*dt));const red=now<p.flash;p.armor.color.setHex(red?0xff2020:0x41474d);p.dark.color.setHex(red?0xff2020:0x242b34)}animateEffects(dt);if(ready&&now-lastSync>=1000/60){lastSync=now;const s=localSnapshot();if(host){broadcast({type:'move',...s})}else send(hostConn,{type:'move',...s})}renderer.autoClear = false;renderer.clear();renderer.render(scene,camera);renderer.clearDepth();renderer.render(weaponScene,weaponCamera)}requestAnimationFrame(frame);
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();weaponCamera.aspect=innerWidth/innerHeight;weaponCamera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
