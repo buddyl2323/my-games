@@ -21,73 +21,16 @@ const exit=new THREE.Group();exit.position.set(17.5,0,1.5);scene.add(exit);const
 const keys={};let player={x:1.5,z:1.5,yaw:0,pitch:0},monsterPos={x:16.5,z:13.5},active=false,found=0,flashOn=true,last=performance.now(),clock=0,path=[],pathWait=0,step=0;
 const menu=document.getElementById('menu'),hint=document.getElementById('hint'),blood=document.getElementById('blood');function message(t){hint.textContent=t}
 function bfs(){const sx=Math.floor(monsterPos.x),sz=Math.floor(monsterPos.z),tx=Math.floor(player.x),tz=Math.floor(player.z),q=[[sx,sz]],seen=new Set([`${sx},${sz}`]),parent=new Map();let end=null;for(let i=0;i<q.length;i++){const [x,z]=q[i],key=`${x},${z}`;if(x===tx&&z===tz){end=key;break}for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,nz=z+dz,k=`${nx},${nz}`;if(!wall(nx+.5,nz+.5)&&!seen.has(k)){seen.add(k);parent.set(k,key);q.push([nx,nz])}}}const out=[];while(end&&end!==`${sx},${sz}`){const [x,z]=end.split(',').map(Number);out.unshift({x:x+.5,z:z+.5});end=parent.get(end)}return out}
-function start(){player={x:1.5,z:1.5,yaw:0,pitch:0};monsterPos={x:16.5,z:13.5};monster.visible=true;fuses.forEach(f=>f.visible=true);found=0;clock=0;pathWait=0;flashOn=true;active=true;document.getElementById('count').textContent='0';document.getElementById('light').textContent='ON';menu.style.display='none';message('FIND THREE FUSES. DO NOT LET IT CATCH YOU.');renderer.domElement.requestPointerLock?.()}
+function start(){jumpActive=false;jump.style.display='none';player={x:1.5,z:1.5,yaw:0,pitch:0};monsterPos={x:16.5,z:13.5};monster.visible=true;fuses.forEach(f=>f.visible=true);found=0;clock=0;pathWait=0;flashOn=true;active=true;document.getElementById('count').textContent='0';document.getElementById('light').textContent='ON';menu.style.display='none';message('FIND THREE FUSES. DO NOT LET IT CATCH YOU.');renderer.domElement.requestPointerLock?.()}
 document.getElementById('start').onclick=start;renderer.domElement.addEventListener('click',()=>{if(active)renderer.domElement.requestPointerLock?.()});document.addEventListener('mousemove',e=>{if(active&&document.pointerLockElement===renderer.domElement){player.yaw-=e.movementX*.0023;player.pitch=Math.max(-1.15,Math.min(1.15,player.pitch-e.movementY*.0023))}});document.addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;if(k==='f'&&active){flashOn=!flashOn;document.getElementById('light').textContent=flashOn?'ON':'OFF'}if(k==='e'&&active){const near=fuses.find(f=>f.visible&&Math.hypot(f.position.x-player.x,f.position.z-player.z)<1.3);if(near){near.visible=false;found++;document.getElementById('count').textContent=found;message(found===3?'ALL FUSES FOUND. REACH THE GREEN EXIT!':`FUSE ${found}/3 FOUND`)}else if(found===3&&Math.hypot(player.x-17.5,player.z-1.5)<1.4)finish(true)}});document.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
-function finish(won){
-  if (!won) monsterJumpscare();
-  active=false;document.exitPointerLock?.();menu.style.display='flex';document.getElementById('title').textContent=won?'YOU ESCAPED':'IT FOUND YOU';document.getElementById('story').textContent=won?'The doors close behind you. The station falls silent.':'You heard it running behind you. Then everything went black.';document.getElementById('start').textContent='PLAY AGAIN'}
-function tick(now){requestAnimationFrame(tick);const dt=Math.min(.045,(now-last)/1000);last=now;if(active){clock+=dt;const f=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0),side=(keys.d?1:0)-(keys.a?1:0),len=Math.hypot(f,side)||1,speed=(keys.shift?5.1:3.15)*dt;const dx=(-Math.sin(player.yaw)*f+Math.cos(player.yaw)*side)/len*speed,dz=(-Math.cos(player.yaw)*f-Math.sin(player.yaw)*side)/len*speed;if(valid(player.x+dx,player.z))player.x+=dx;if(valid(player.x,player.z+dz))player.z+=dz;if(f||side)step+=dt*12;pathWait-=dt;if(pathWait<=0){path=bfs();pathWait=.18}const target=path[0]||player,mdx=target.x-monsterPos.x,mdz=target.z-monsterPos.z,d=Math.hypot(mdx,mdz);if(d>.035){const ms=Math.min(d,dt*(4.7+Math.min(1.4,clock/40)));const mx=mdx/d*ms,mz=mdz/d*ms;if(valid(monsterPos.x+mx,monsterPos.z,.14))monsterPos.x+=mx;if(valid(monsterPos.x,monsterPos.z+mz,.14))monsterPos.z+=mz}const near=Math.hypot(player.x-monsterPos.x,player.z-monsterPos.z);blood.style.opacity=String(Math.max(0,Math.min(.75,(5-near)/5)));if(near<.57)finish(false);if(near<2.4)message('RUN! IT IS RIGHT BEHIND YOU!');else if(found===3)message('REACH THE GREEN EXIT — PRESS E');else{const nearFuse=fuses.some(o=>o.visible&&Math.hypot(player.x-o.position.x,player.z-o.position.z)<1.3);if(nearFuse)message('PRESS E TO COLLECT FUSE')}}
+// Full-screen animated catch jumpscare with procedural creature face and synthesized shriek.
+const jump=document.getElementById('jump'),jumpCanvas=document.getElementById('jumpface'),jg=jumpCanvas.getContext('2d');
+let jumpStart=0,jumpActive=false,jumpAudio=null;
+function shriek(){try{const A=window.AudioContext||window.webkitAudioContext;jumpAudio??=new A();jumpAudio.resume();const t=jumpAudio.currentTime;const noise=jumpAudio.createBuffer(1,Math.floor(jumpAudio.sampleRate*.95),jumpAudio.sampleRate);const a=noise.getChannelData(0);for(let i=0;i<a.length;i++)a[i]=(Math.random()*2-1)*(1-i/a.length);const src=jumpAudio.createBufferSource();src.buffer=noise;const filter=jumpAudio.createBiquadFilter();filter.type='bandpass';filter.frequency.setValueAtTime(450,t);filter.frequency.exponentialRampToValueAtTime(2600,t+.25);const gain=jumpAudio.createGain();gain.gain.setValueAtTime(.001,t);gain.gain.exponentialRampToValueAtTime(.65,t+.045);gain.gain.exponentialRampToValueAtTime(.001,t+.85);src.connect(filter).connect(gain).connect(jumpAudio.destination);src.start(t);src.stop(t+.95);const osc=jumpAudio.createOscillator(),og=jumpAudio.createGain();osc.type='sawtooth';osc.frequency.setValueAtTime(95,t);osc.frequency.exponentialRampToValueAtTime(38,t+.5);og.gain.setValueAtTime(.3,t);og.gain.exponentialRampToValueAtTime(.001,t+.55);osc.connect(og).connect(jumpAudio.destination);osc.start(t);osc.stop(t+.56)}catch(e){}}
+function drawJumpFace(ms){const w=800,h=600,t=ms/1000;jg.clearRect(0,0,w,h);jg.fillStyle='#050505';jg.fillRect(0,0,w,h);jg.save();jg.translate(w/2+(Math.random()-.5)*35,h*.52+(Math.random()-.5)*30);const zoom=1.05+Math.min(.9,t*1.7);jg.scale(zoom,zoom);const aura=jg.createRadialGradient(0,0,5,0,0,360);aura.addColorStop(0,'#3b4141');aura.addColorStop(.55,'#101415');aura.addColorStop(1,'#000');jg.fillStyle=aura;jg.beginPath();jg.ellipse(0,0,230,290,0,0,Math.PI*2);jg.fill();jg.fillStyle='#020303';jg.beginPath();jg.ellipse(0,-22,160,235,0,0,Math.PI*2);jg.fill();jg.fillStyle='#262e2d';jg.beginPath();jg.ellipse(0,-125,150,62,0,0,Math.PI*2);jg.fill();for(const side of [-1,1]){jg.shadowColor='#e7ffff';jg.shadowBlur=32+Math.random()*28;jg.fillStyle='#f3ffff';jg.beginPath();jg.ellipse(side*73,-72,44,15,side*.16,0,Math.PI*2);jg.fill();jg.shadowBlur=0;jg.fillStyle='#010101';jg.beginPath();jg.ellipse(side*73,-72,11,12,0,0,Math.PI*2);jg.fill()}jg.fillStyle='#000';jg.beginPath();jg.moveTo(-94,45);jg.quadraticCurveTo(0,10,94,45);jg.lineTo(75,195);jg.quadraticCurveTo(0,245,-75,195);jg.closePath();jg.fill();jg.fillStyle='#b9c1ba';for(let i=0;i<9;i++){const x=-80+i*20;jg.beginPath();jg.moveTo(x,50);jg.lineTo(x+11,52);jg.lineTo(x+3,98+Math.random()*16);jg.closePath();jg.fill();jg.beginPath();jg.moveTo(x,195);jg.lineTo(x+13,191);jg.lineTo(x+5,145-Math.random()*12);jg.closePath();jg.fill()}jg.restore();for(let i=0;i<30;i++){jg.fillStyle=`rgba(255,255,255,${Math.random()*.13})`;jg.fillRect(0,Math.random()*h,w,Math.random()*3+1)}}
+function triggerJumpscare(){if(jumpActive)return;active=false;jumpActive=true;document.exitPointerLock?.();jump.style.display='flex';jump.classList.add('active');jumpStart=performance.now();shriek();function animate(t){if(!jumpActive)return;drawJumpFace(t-jumpStart);if(t-jumpStart<1250)requestAnimationFrame(animate);else{jumpActive=false;jump.classList.remove('active');jump.style.display='none';finish(false)}}requestAnimationFrame(animate)}
+function finish(won){active=false;document.exitPointerLock?.();menu.style.display='flex';document.getElementById('title').textContent=won?'YOU ESCAPED':'IT FOUND YOU';document.getElementById('story').textContent=won?'The doors close behind you. The station falls silent.':'You heard it running behind you. Then everything went black.';document.getElementById('start').textContent='PLAY AGAIN'}
+function tick(now){requestAnimationFrame(tick);const dt=Math.min(.045,(now-last)/1000);last=now;if(active){clock+=dt;const f=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0),side=(keys.d?1:0)-(keys.a?1:0),len=Math.hypot(f,side)||1,speed=(keys.shift?5.1:3.15)*dt;const dx=(-Math.sin(player.yaw)*f+Math.cos(player.yaw)*side)/len*speed,dz=(-Math.cos(player.yaw)*f-Math.sin(player.yaw)*side)/len*speed;if(valid(player.x+dx,player.z))player.x+=dx;if(valid(player.x,player.z+dz))player.z+=dz;if(f||side)step+=dt*12;pathWait-=dt;if(pathWait<=0){path=bfs();pathWait=.18}const target=path[0]||player,mdx=target.x-monsterPos.x,mdz=target.z-monsterPos.z,d=Math.hypot(mdx,mdz);if(d>.035){const ms=Math.min(d,dt*(2.15+Math.min(0.45,clock/90)));const mx=mdx/d*ms,mz=mdz/d*ms;if(valid(monsterPos.x+mx,monsterPos.z,.14))monsterPos.x+=mx;if(valid(monsterPos.x,monsterPos.z+mz,.14))monsterPos.z+=mz}const near=Math.hypot(player.x-monsterPos.x,player.z-monsterPos.z);blood.style.opacity=String(Math.max(0,Math.min(.75,(5-near)/5)));if(near<.72)triggerJumpscare();if(near<2.4)message('RUN! IT IS RIGHT BEHIND YOU!');else if(found===3)message('REACH THE GREEN EXIT — PRESS E');else{const nearFuse=fuses.some(o=>o.visible&&Math.hypot(player.x-o.position.x,player.z-o.position.z)<1.3);if(nearFuse)message('PRESS E TO COLLECT FUSE')}}
 camera.position.set(player.x,1.62+(active?Math.sin(step)*.025:0),player.z);camera.rotation.set(player.pitch,player.yaw,0,'YXZ');flashlight.position.copy(camera.position);flashlight.target.position.copy(camera.position).add(new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(8));flashlight.visible=flashOn;
 monster.position.set(monsterPos.x,Math.sin(clock*14)*.045,monsterPos.z);monster.rotation.y=Math.atan2(player.x-monsterPos.x,player.z-monsterPos.z);monster.children.forEach((o,i)=>{if(i>3&&o.type==='Mesh'&&i%4===0)o.rotation.z=Math.sin(clock*16+i)*.07});fuses.forEach((f,i)=>{f.rotation.y+=dt;f.position.y=.7+Math.sin(clock*2+i)*.08});renderer.render(scene,camera)}requestAnimationFrame(tick);
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
-
-function monsterJumpscare() {
-  if (document.getElementById('monster-jumpscare')) return;
-
-  const screen = document.createElement('div');
-  screen.id = 'monster-jumpscare';
-  screen.style.cssText = `
-    position:fixed;inset:0;z-index:99999;
-    background:#080000;display:flex;
-    align-items:center;justify-content:center;
-    overflow:hidden;animation:scareShake .09s infinite;
-  `;
-
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes scareShake {
-      0% {transform:translate(-9px,5px) scale(1.05)}
-      50% {transform:translate(10px,-7px) scale(1.12)}
-      100% {transform:translate(-5px,8px) scale(1.08)}
-    }
-  `;
-  screen.innerHTML = `
-    <svg viewBox="0 0 500 600" style="height:115vh;max-width:110vw">
-      <path d="M110 190 Q95 25 250 12 Q410 25 390 190
-               L440 420 320 580 180 580 60 420Z"
-            fill="#08090b" stroke="#444" stroke-width="7"/>
-      <ellipse cx="165" cy="230" rx="67" ry="37" fill="#fff"/>
-      <ellipse cx="335" cy="230" rx="67" ry="37" fill="#fff"/>
-      <circle cx="165" cy="230" r="17" fill="#050505"/>
-      <circle cx="335" cy="230" r="17" fill="#050505"/>
-      <path d="M105 350 Q250 315 395 350 L350 500
-               Q250 555 150 500Z" fill="#030000" stroke="#6b1616" stroke-width="8"/>
-      ${Array.from({length:11},(_,i)=>
-        `<path d="M${112+i*27} 350 l13 75 14 -75Z" fill="#ddd9cf"/>`
-      ).join('')}
-    </svg>
-  `;
-
-  document.head.appendChild(style);
-  document.body.appendChild(screen);
-
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(850, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(65, ctx.currentTime + 0.9);
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 1);
-    setTimeout(() => ctx.close(), 1500);
-  } catch (e) {}
-
-  setTimeout(() => {
-    screen.remove();
-    style.remove();
-  }, 1500);
-}
